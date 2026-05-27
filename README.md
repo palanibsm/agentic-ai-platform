@@ -2,6 +2,8 @@
 
 Enterprise-grade agentic AI platform for a Singapore bank, built on LangGraph, LiteLLM, Vertex AI, and GCP Cloud Run.
 
+> **Testing & Usage Guide:** See [TESTING_GUIDE.md](./TESTING_GUIDE.md) for step-by-step test scenarios, API reference, role matrix, ingestion instructions, and troubleshooting tips.
+
 ## Architecture
 
 ```
