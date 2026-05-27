@@ -110,11 +110,11 @@ Push to `main` triggers Cloud Build (`infra/cloudbuild.yaml`):
 
 | Service | URL |
 |---|---|
-| Portal | https://portal-588333972270.us-central1.run.app |
-| Agent Core | https://agent-core-588333972270.us-central1.run.app |
-| RAG Service | https://rag-service-588333972270.us-central1.run.app |
-| LLM Gateway | https://llm-gateway-588333972270.us-central1.run.app |
-| Governance | https://governance-588333972270.us-central1.run.app |
+| Portal | https://portal-hcm6dgvcaq-uc.a.run.app |
+| Agent Core | https://agent-core-hcm6dgvcaq-uc.a.run.app |
+| RAG Service | https://rag-service-hcm6dgvcaq-uc.a.run.app |
+| LLM Gateway | https://llm-gateway-hcm6dgvcaq-uc.a.run.app |
+| Governance | https://governance-hcm6dgvcaq-uc.a.run.app |
 
 ## Environment Variables
 
