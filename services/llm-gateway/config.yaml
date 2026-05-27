@@ -1,0 +1,61 @@
+model_list:
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+      max_tokens: 8192
+
+  - model_name: claude-opus
+    litellm_params:
+      model: anthropic/claude-opus-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+      max_tokens: 8192
+
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+      max_tokens: 8192
+
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+      max_tokens: 4096
+
+router_settings:
+  routing_strategy: least-busy
+  num_retries: 3
+  retry_after: 5
+  allowed_fails: 2
+  fallbacks:
+    - claude-sonnet: [gpt-4o]
+    - claude-opus: [gpt-4o]
+  context_window_fallbacks:
+    - claude-sonnet: [gpt-4o]
+
+litellm_settings:
+  # Custom guardrail callback (registered via startup hook — see callbacks/guardrail_callback.py)
+  # callbacks: ["callbacks.guardrail_callback.GuardrailCallback"]
+
+  # Observability (enable after: uv pip install langfuse)
+  # success_callback: ["langfuse"]
+  # failure_callback: ["langfuse"]
+
+  # Cost and token limits
+  max_budget: 25                    # USD/month hard cap
+  budget_duration: monthly
+  max_input_tokens: 32768
+
+  # Security — never store raw prompts in external logs
+  redact_user_api_key_info: true
+  store_prompts_in_spend_logs: false
+
+  # Drop params unsupported by some models (prevents 400 errors on fallback)
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  store_model_in_db: false
+  allow_requests_on_db_unavailable: true
+  health_check_interval: 30

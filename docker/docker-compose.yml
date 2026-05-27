@@ -1,0 +1,121 @@
+version: "3.9"
+
+# ── Inter-service URLs (Docker DNS) ──────────────────────────────────────────
+# Services reference each other by container name, not localhost.
+# These override the localhost values in .env inside the Docker network.
+
+x-service-urls: &service-urls
+  LLM_GATEWAY_URL: http://llm-gateway:4000
+  RAG_SERVICE_URL: http://rag-service:8001
+  AGENT_CORE_URL:  http://agent-core:8002
+  GOVERNANCE_URL:  http://governance:8003
+
+services:
+
+  # ── LLM Gateway (LiteLLM proxy) ───────────────────────────────────────────
+  llm-gateway:
+    build:
+      context: ../services/llm-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    env_file: ../.env
+    volumes:
+      - ../services/llm-gateway/config.yaml:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ── RAG Service ───────────────────────────────────────────────────────────
+  rag-service:
+    build:
+      context: ../services/rag-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    env_file: ../.env
+    environment:
+      <<: *service-urls
+      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
+    volumes:
+      - type: bind
+        source: ${APPDATA}/gcloud/application_default_credentials.json
+        target: /root/.config/gcloud/application_default_credentials.json
+        read_only: true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ── Agent Core (LangGraph) ────────────────────────────────────────────────
+  agent-core:
+    build:
+      context: ../services/agent-core
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    env_file: ../.env
+    environment:
+      <<: *service-urls
+      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
+    volumes:
+      - type: bind
+        source: ${APPDATA}/gcloud/application_default_credentials.json
+        target: /root/.config/gcloud/application_default_credentials.json
+        read_only: true
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
+      rag-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Governance Service ────────────────────────────────────────────────────
+  governance:
+    build:
+      context: ../services/governance
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    env_file: ../.env
+    environment:
+      <<: *service-urls
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # ── Portal (Next.js) ─────────────────────────────────────────────────────
+  portal:
+    build:
+      context: ../apps/portal
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file: ../.env
+    environment:
+      <<: *service-urls
+    depends_on:
+      agent-core:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  default:
+    name: agentic-ai-network

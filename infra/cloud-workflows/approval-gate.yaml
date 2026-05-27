@@ -1,0 +1,23 @@
+main:
+  params: [args]
+  steps:
+    - check_risk:
+        assign:
+          - risk_level: ${args.risk_level}
+    - route_approval:
+        switch:
+          - condition: ${risk_level == "low"}
+            next: auto_approve
+          - condition: ${risk_level == "high"}
+            next: human_approve
+    - auto_approve:
+        return: {approved: true, method: "auto"}
+    - human_approve:
+        call: http.post
+        args:
+          url: ${sys.get_env("GOVERNANCE_URL") + "/approvals/request"}
+          body: ${args}
+        result: approval_result
+        next: return_result
+    - return_result:
+        return: ${approval_result}

@@ -1,0 +1,16 @@
+name: Deploy to Dev
+
+on:
+  push:
+    branches: [develop]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_DEV }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud run deploy agent-core --source services/agent-core --region us-central1 --project ${{ secrets.GCP_PROJECT_DEV }}

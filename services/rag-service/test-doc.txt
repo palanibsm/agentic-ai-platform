@@ -1,0 +1,1 @@
+﻿MAS TRM requires all data at rest to be encrypted using AES-256. Data in transit must use TLS 1.2 or higher. Access must follow least privilege. Audit logs must be retained for 5 years.

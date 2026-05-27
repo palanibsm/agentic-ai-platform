@@ -1,0 +1,8 @@
+project_id                  = "ai-agent-project-497604"
+region                      = "us-central1"
+gcs_bucket_name             = "ai-agent-project-497604-rag-docs"
+vertex_ai_index_id          = "projects/588333972270/locations/us-central1/indexes/YOUR_INDEX_ID"
+vertex_ai_endpoint_id       = "projects/588333972270/locations/us-central1/indexEndpoints/YOUR_ENDPOINT_ID"
+vertex_ai_deployed_index_id = "deployed_index"
+agent_default_model         = "claude-sonnet"
+image_tag                   = "latest"

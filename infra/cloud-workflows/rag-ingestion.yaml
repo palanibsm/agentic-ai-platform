@@ -1,0 +1,23 @@
+main:
+  params: [args]
+  steps:
+    - init:
+        assign:
+          - bucket: ${args.bucket}
+          - prefix: ${args.prefix}
+    - list_objects:
+        call: http.get
+        args:
+          url: ${"https://storage.googleapis.com/storage/v1/b/" + bucket + "/o?prefix=" + prefix}
+          auth:
+            type: OAuth2
+        result: objects
+    - embed_and_index:
+        call: http.post
+        args:
+          url: ${sys.get_env("RAG_SERVICE_URL") + "/ingest"}
+          body:
+            objects: ${objects.body.items}
+        result: ingest_result
+    - return_result:
+        return: ${ingest_result}

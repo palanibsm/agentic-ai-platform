@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --brand: #c8102e; }
+
+body { @apply bg-gray-50 text-gray-900; }
+
+.chat-bubble-user {
+  @apply bg-brand text-white rounded-2xl rounded-br-sm px-4 py-2 max-w-[75%] ml-auto;
+}
+.chat-bubble-assistant {
+  @apply bg-white border border-gray-200 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[80%] shadow-sm;
+}
