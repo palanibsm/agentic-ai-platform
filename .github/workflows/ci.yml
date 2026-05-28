@@ -23,12 +23,15 @@ jobs:
 
   lint-frontend:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [portal, ide-chat]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: cd apps/portal && npm install && npm run build
+      - run: cd apps/${{ matrix.app }} && npm install && npm run build
 
   validate-terraform:
     runs-on: ubuntu-latest
