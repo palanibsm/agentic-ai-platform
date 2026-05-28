@@ -140,7 +140,7 @@ steps:
       - deploy-llm-gateway
       - deploy-rag-service
 
-  # ── Phase 4: Build portal with agent-core URL baked in ────────────────────
+  # ── Phase 4: Build portal + ide-chat with agent-core URL baked in ───────────
 
   - id: get-agent-core-url
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -169,10 +169,29 @@ steps:
           apps/portal
     waitFor: [get-agent-core-url]
 
+  - id: build-ide-chat
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        AGENT_URL=$(cat /workspace/agent_core_url.txt)
+        docker build \
+          --build-arg NEXT_PUBLIC_AGENT_URL="$AGENT_URL" \
+          -t $_REGISTRY/ide-chat:$_IMAGE_TAG \
+          -t $_REGISTRY/ide-chat:latest \
+          apps/ide-chat
+    waitFor: [get-agent-core-url]
+
   - id: push-portal
     name: gcr.io/cloud-builders/docker
     args: [push, --all-tags, $_REGISTRY/portal]
     waitFor: [build-portal]
+
+  - id: push-ide-chat
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, $_REGISTRY/ide-chat]
+    waitFor: [build-ide-chat]
 
   - id: deploy-portal
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -185,9 +204,24 @@ steps:
           --image=$_REGISTRY/portal:$_IMAGE_TAG \
           --region=$_REGION \
           --project=$_PROJECT \
-          --update-env-vars="AGENT_CORE_URL=$AGENT_URL" \
+          --update-env-vars="AGENT_CORE_URL=$AGENT_URL,NEXT_PUBLIC_AGENT_URL=$AGENT_URL" \
           --quiet
     waitFor: [push-portal]
+
+  - id: deploy-ide-chat
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        AGENT_URL=$(cat /workspace/agent_core_url.txt)
+        gcloud run deploy ide-chat \
+          --image=$_REGISTRY/ide-chat:$_IMAGE_TAG \
+          --region=$_REGION \
+          --project=$_PROJECT \
+          --update-env-vars="AGENT_CORE_URL=$AGENT_URL,NEXT_PUBLIC_AGENT_URL=$AGENT_URL" \
+          --quiet
+    waitFor: [push-ide-chat]
 
 images:
   - $_REGISTRY/governance:$_IMAGE_TAG
@@ -195,3 +229,4 @@ images:
   - $_REGISTRY/rag-service:$_IMAGE_TAG
   - $_REGISTRY/agent-core:$_IMAGE_TAG
   - $_REGISTRY/portal:$_IMAGE_TAG
+  - $_REGISTRY/ide-chat:$_IMAGE_TAG
