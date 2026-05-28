@@ -7,13 +7,13 @@ Endpoints:
 """
 
 from dotenv import load_dotenv
-load_dotenv()
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from src.ingestion.pipeline import ingest_from_gcs
 from src.retrieval.retriever import retrieve_chunks
+
+load_dotenv()
 
 app = FastAPI(title="RAG Service", version="0.1.0")
 

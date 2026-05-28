@@ -40,7 +40,6 @@ async def ingest_from_gcs(prefix: str = "", allowed_roles: list[str] = []) -> di
 
     bucket_name = os.getenv("GCS_BUCKET_NAME")
     project     = os.getenv("GCP_PROJECT_ID")
-    region      = os.getenv("GCP_REGION", "us-central1")
 
     if not bucket_name or not project:
         logger.warning("GCS_BUCKET_NAME or GCP_PROJECT_ID not set — skipping real ingestion")
