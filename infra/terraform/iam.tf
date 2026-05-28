@@ -6,11 +6,9 @@ resource "google_service_account" "runner" {
 
 locals {
   runner_roles = [
-    "roles/aiplatform.user",
     "roles/pubsub.publisher",
     "roles/secretmanager.secretAccessor",
-    "roles/storage.objectViewer",
-    "roles/storage.objectCreator",
+    "roles/storage.objectAdmin",    # covers viewer+creator+deleter (needed for Qdrant GCS volume)
     "roles/logging.logWriter",
     "roles/cloudtrace.agent",
     "roles/monitoring.metricWriter",

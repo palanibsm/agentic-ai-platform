@@ -16,24 +16,14 @@ variable "image_tag" {
 }
 
 variable "gcs_bucket_name" {
-  description = "GCS bucket for RAG documents and chunk metadata"
+  description = "GCS bucket for RAG source documents"
   type        = string
 }
 
-variable "vertex_ai_index_id" {
-  description = "Existing Vertex AI Vector Search index ID"
+variable "qdrant_collection" {
+  description = "Qdrant collection name for the knowledge base"
   type        = string
-}
-
-variable "vertex_ai_endpoint_id" {
-  description = "Existing Vertex AI Vector Search endpoint ID"
-  type        = string
-}
-
-variable "vertex_ai_deployed_index_id" {
-  description = "Deployed index ID within the endpoint"
-  type        = string
-  default     = "deployed_index"
+  default     = "knowledge-base"
 }
 
 variable "agent_default_model" {

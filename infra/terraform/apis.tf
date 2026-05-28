@@ -5,7 +5,6 @@ resource "google_project_service" "apis" {
     "cloudbuild.googleapis.com",
     "secretmanager.googleapis.com",
     "pubsub.googleapis.com",
-    "aiplatform.googleapis.com",
     "storage.googleapis.com",
     "iam.googleapis.com",
     "logging.googleapis.com",

@@ -1,7 +1,77 @@
 # ── Cloud Run services ────────────────────────────────────────────────────────
-# All internal services (governance, llm-gateway, rag-service) are private.
-# agent-core is private. Only portal is public.
-# Inter-service calls use Cloud Run service URLs with the runner SA identity.
+# All services are set to allow-unauthenticated for simplicity in this POC.
+# Qdrant persists vector data to a GCS bucket via Cloud Run's native GCS volume mount.
+# Inter-service calls use Cloud Run service URLs.
+
+# ── Qdrant (vector store) ─────────────────────────────────────────────────────
+resource "google_cloud_run_v2_service" "qdrant" {
+  name     = "qdrant"
+  location = var.region
+  project  = var.project_id
+
+  ingress = "INGRESS_TRAFFIC_ALL"
+
+  template {
+    service_account = local.sa_email
+
+    containers {
+      image = "qdrant/qdrant:v1.9.2"
+
+      ports {
+        container_port = 6333
+      }
+
+      env {
+        name  = "QDRANT__STORAGE__STORAGE_PATH"
+        value = "/qdrant/storage"
+      }
+
+      volume_mounts {
+        name       = "qdrant-storage"
+        mount_path = "/qdrant/storage"
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "1Gi"
+        }
+      }
+
+      startup_probe {
+        http_get {
+          path = "/healthz"
+          port = 6333
+        }
+        initial_delay_seconds = 10
+        period_seconds        = 10
+        failure_threshold     = 5
+      }
+    }
+
+    volumes {
+      name = "qdrant-storage"
+      gcs {
+        bucket    = google_storage_bucket.qdrant_storage.name
+        read_only = false
+      }
+    }
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    google_storage_bucket.qdrant_storage,
+    google_storage_bucket_iam_member.qdrant_storage_admin,
+  ]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "qdrant_public" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.qdrant.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
 
 # ── Governance ────────────────────────────────────────────────────────────────
 resource "google_cloud_run_v2_service" "governance" {
@@ -167,28 +237,37 @@ resource "google_cloud_run_v2_service" "rag_service" {
         value = var.gcs_bucket_name
       }
       env {
-        name  = "VERTEX_AI_INDEX_ID"
-        value = var.vertex_ai_index_id
+        name  = "QDRANT_URL"
+        value = google_cloud_run_v2_service.qdrant.uri
       }
       env {
-        name  = "VERTEX_AI_ENDPOINT_ID"
-        value = var.vertex_ai_endpoint_id
-      }
-      env {
-        name  = "VERTEX_AI_DEPLOYED_INDEX_ID"
-        value = var.vertex_ai_deployed_index_id
+        name  = "QDRANT_COLLECTION"
+        value = var.qdrant_collection
       }
 
       resources {
         limits = {
-          cpu    = "1"
-          memory = "1Gi"
+          cpu    = "2"
+          memory = "2Gi"   # sentence-transformers model needs headroom
         }
+      }
+
+      startup_probe {
+        http_get {
+          path = "/health"
+          port = 8001
+        }
+        initial_delay_seconds = 30
+        period_seconds        = 10
+        failure_threshold     = 6
       }
     }
   }
 
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_cloud_run_v2_service.qdrant,
+  ]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "rag_service_public" {

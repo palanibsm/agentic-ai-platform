@@ -31,7 +31,6 @@ gcloud services enable `
     cloudbuild.googleapis.com `
     secretmanager.googleapis.com `
     pubsub.googleapis.com `
-    aiplatform.googleapis.com `
     storage.googleapis.com `
     --project $Project
 
@@ -58,10 +57,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $roles = @(
-    "roles/aiplatform.user",
     "roles/pubsub.publisher",
     "roles/secretmanager.secretAccessor",
-    "roles/storage.objectViewer",
+    "roles/storage.objectAdmin",   # needed for Qdrant GCS volume mount (read/write/delete)
     "roles/logging.logWriter"
 )
 foreach ($role in $roles) {
@@ -140,12 +138,9 @@ function Get-EnvVal([string]$key) {
     return ""
 }
 
-$GCP_PROJECT_ID           = Get-EnvVal "GCP_PROJECT_ID"
-$GCP_REGION               = Get-EnvVal "GCP_REGION"
-$GCS_BUCKET_NAME          = Get-EnvVal "GCS_BUCKET_NAME"
-$VERTEX_AI_INDEX_ID       = Get-EnvVal "VERTEX_AI_INDEX_ID"
-$VERTEX_AI_ENDPOINT_ID    = Get-EnvVal "VERTEX_AI_ENDPOINT_ID"
-$VERTEX_AI_DEPLOYED_INDEX = Get-EnvVal "VERTEX_AI_DEPLOYED_INDEX_ID"
+$GCP_PROJECT_ID  = Get-EnvVal "GCP_PROJECT_ID"
+$GCP_REGION      = Get-EnvVal "GCP_REGION"
+$GCS_BUCKET_NAME = Get-EnvVal "GCS_BUCKET_NAME"
 
 # Common deploy flags
 $commonFlags = @(
@@ -156,7 +151,29 @@ $commonFlags = @(
     "--quiet"
 )
 
-# 6a. Governance
+# 6a. Qdrant — deploy from public image (no build needed)
+Write-Host "  Deploying qdrant..." -ForegroundColor Cyan
+$QDRANT_BUCKET = "$Project-qdrant-storage"
+# Ensure the GCS bucket for Qdrant storage exists
+$null = gcloud storage buckets describe "gs://$QDRANT_BUCKET" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    gcloud storage buckets create "gs://$QDRANT_BUCKET" --location $Region --project $Project
+    Write-Host "  Created Qdrant storage bucket: $QDRANT_BUCKET" -ForegroundColor Green
+}
+
+gcloud run deploy qdrant `
+    --image "qdrant/qdrant:v1.9.2" `
+    --port 6333 `
+    --set-env-vars "QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage" `
+    --add-volume "name=qdrant-storage,type=cloud-storage,bucket=$QDRANT_BUCKET" `
+    --add-volume-mount "volume=qdrant-storage,mount-path=/qdrant/storage" `
+    --memory 1Gi `
+    @commonFlags
+
+$QDRANT_URL = (gcloud run services describe qdrant --region $Region --project $Project --format "value(status.url)")
+Write-Host "  qdrant: $QDRANT_URL" -ForegroundColor Green
+
+# 6b. Governance
 Write-Host "  Deploying governance..." -ForegroundColor Cyan
 gcloud run deploy governance `
     --image "$IMAGE_BASE/governance:latest" `
@@ -167,7 +184,7 @@ gcloud run deploy governance `
 $GOVERNANCE_URL = (gcloud run services describe governance --region $Region --project $Project --format "value(status.url)")
 Write-Host "  governance: $GOVERNANCE_URL" -ForegroundColor Green
 
-# 6b. LLM Gateway
+# 6c. LLM Gateway
 Write-Host "  Deploying llm-gateway..." -ForegroundColor Cyan
 gcloud run deploy llm-gateway `
     --image "$IMAGE_BASE/llm-gateway:latest" `
@@ -185,8 +202,9 @@ Write-Host "  Deploying rag-service..." -ForegroundColor Cyan
 gcloud run deploy rag-service `
     --image "$IMAGE_BASE/rag-service:latest" `
     --port 8001 `
-    --set-env-vars "GCP_PROJECT_ID=$GCP_PROJECT_ID,GCP_REGION=$GCP_REGION,GCS_BUCKET_NAME=$GCS_BUCKET_NAME,VERTEX_AI_INDEX_ID=$VERTEX_AI_INDEX_ID,VERTEX_AI_ENDPOINT_ID=$VERTEX_AI_ENDPOINT_ID,VERTEX_AI_DEPLOYED_INDEX_ID=$VERTEX_AI_DEPLOYED_INDEX" `
-    --memory 1Gi `
+    --set-env-vars "GCP_PROJECT_ID=$GCP_PROJECT_ID,GCP_REGION=$GCP_REGION,GCS_BUCKET_NAME=$GCS_BUCKET_NAME,QDRANT_URL=$QDRANT_URL,QDRANT_COLLECTION=knowledge-base" `
+    --memory 2Gi `
+    --cpu 2 `
     @commonFlags
 
 $RAG_SERVICE_URL = (gcloud run services describe rag-service --region $Region --project $Project --format "value(status.url)")
@@ -253,5 +271,6 @@ Write-Host "  agent-core  : $AGENT_CORE_URL" -ForegroundColor Green
 Write-Host "  rag-service : $RAG_SERVICE_URL" -ForegroundColor Green
 Write-Host "  llm-gateway : $LLM_GATEWAY_URL" -ForegroundColor Green
 Write-Host "  governance  : $GOVERNANCE_URL" -ForegroundColor Green
+Write-Host "  qdrant      : $QDRANT_URL" -ForegroundColor Green
 Write-Host ""
 Write-Host "Open your portal: $PORTAL_URL" -ForegroundColor Cyan

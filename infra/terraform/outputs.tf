@@ -1,3 +1,8 @@
+output "qdrant_url" {
+  description = "URL of the Qdrant vector store service"
+  value       = google_cloud_run_v2_service.qdrant.uri
+}
+
 output "portal_url" {
   description = "Public URL of the portal"
   value       = google_cloud_run_v2_service.portal.uri
