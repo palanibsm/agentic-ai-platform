@@ -1,23 +1,120 @@
+# rag-ingestion.yaml
+# Scheduled / on-demand RAG ingestion workflow.
+# Calls rag-service /ingest with built-in retry and publishes results to Pub/Sub.
+#
+# Input:
+#   prefix        : string       - GCS prefix to ingest (default: "")
+#   allowed_roles : list[string] - RBAC roles for retrieved chunks
+#                                  (default: ["developer", "admin"])
+#
+# Output:
+#   status   : "success" | "error"
+#   ingested : int
+#   skipped  : int
+#   prefix   : string
+#   error    : string  (only on failure)
+
 main:
   params: [args]
   steps:
+
+    # 1. Initialise
     - init:
         assign:
-          - bucket: ${args.bucket}
-          - prefix: ${args.prefix}
-    - list_objects:
-        call: http.get
-        args:
-          url: ${"https://storage.googleapis.com/storage/v1/b/" + bucket + "/o?prefix=" + prefix}
-          auth:
-            type: OAuth2
-        result: objects
-    - embed_and_index:
+          - prefix:        ${default(map.get(args, "prefix"), "")}
+          - allowed_roles: ${default(map.get(args, "allowed_roles"), ["developer", "admin"])}
+          - rag_url:       ${sys.get_env("RAG_SERVICE_URL")}
+          - project_id:    ${sys.get_env("GCP_PROJECT_ID")}
+          - pubsub_url:    ${"https://pubsub.googleapis.com/v1/projects/" + sys.get_env("GCP_PROJECT_ID") + "/topics/audit-events:publish"}
+
+    # 2. Call RAG service /ingest (with built-in retry + exponential back-off)
+    - call_ingest:
+        try:
+          call: http.post
+          args:
+            url:     ${rag_url + "/ingest"}
+            auth:
+              type: OIDC
+            timeout: 300
+            body:
+              prefix:        ${prefix}
+              allowed_roles: ${allowed_roles}
+          result: ingest_result
+        retry:
+          predicate: ${http.default_retry_predicate}
+          max_retries: 3
+          backoff:
+            initial_delay: 10
+            max_delay:     30
+            multiplier:    2
+        except:
+          as: e
+          steps:
+            - build_error_msg:
+                assign:
+                  - error_payload:
+                      event_type: "rag.ingestion.failed"
+                      prefix:     ${prefix}
+                      workflow:   "rag-ingestion"
+                  - encoded_error: ${base64.encode(json.encode(error_payload))}
+            - emit_error_event:
+                call: http.post
+                args:
+                  url:  ${pubsub_url}
+                  auth:
+                    type: OAuth2
+                  body:
+                    messages:
+                      - data: ${encoded_error}
+                result: _
+            - return_error:
+                return:
+                  status:   "error"
+                  prefix:   ${prefix}
+                  ingested: 0
+                  skipped:  0
+
+    # 3. Check HTTP response code
+    - check_response:
+        switch:
+          - condition: ${ingest_result.code != 200}
+            next: return_bad_response
+
+    # 4. Build and emit success audit event
+    - build_success_msg:
+        assign:
+          - success_payload:
+              event_type: "rag.ingestion.complete"
+              prefix:     ${prefix}
+              ingested:   ${ingest_result.body.ingested}
+              skipped:    ${ingest_result.body.skipped}
+              workflow:   "rag-ingestion"
+          - encoded_success: ${base64.encode(json.encode(success_payload))}
+
+    - emit_success_event:
         call: http.post
         args:
-          url: ${sys.get_env("RAG_SERVICE_URL") + "/ingest"}
+          url:  ${pubsub_url}
+          auth:
+            type: OAuth2
           body:
-            objects: ${objects.body.items}
-        result: ingest_result
-    - return_result:
-        return: ${ingest_result}
+            messages:
+              - data: ${encoded_success}
+        result: _
+
+    # 5. Return success
+    - return_success:
+        return:
+          status:   "success"
+          prefix:   ${prefix}
+          ingested: ${ingest_result.body.ingested}
+          skipped:  ${ingest_result.body.skipped}
+
+    # Bad HTTP response
+    - return_bad_response:
+        return:
+          status:   "error"
+          prefix:   ${prefix}
+          ingested: 0
+          skipped:  0
+          error:    ${"HTTP " + string(ingest_result.code) + " from rag-service"}

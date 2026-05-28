@@ -1,23 +1,137 @@
+# approval-gate.yaml
+# Routes agent actions through governance policy check and risk-based approval.
+#
+# Input:
+#   user_id    : string  - identity of the requesting user
+#   user_role  : string  - developer | senior-engineer | architect | admin
+#   action     : string  - description of the action being approved
+#   skill      : string  - active skill name (optional)
+#   risk_level : string  - low | medium | high  (default: low)
+#
+# Output:
+#   approved   : bool
+#   method     : "auto" | "policy_block" | "pending_human"
+#   risk_level : string
+#   violations : list  (only when approved=false via policy_block)
+
 main:
   params: [args]
   steps:
-    - check_risk:
+
+    # 1. Initialise
+    - init:
         assign:
-          - risk_level: ${args.risk_level}
-    - route_approval:
+          - user_id:        ${args.user_id}
+          - user_role:      ${args.user_role}
+          - action:         ${args.action}
+          - skill:          ${default(map.get(args, "skill"), "")}
+          - risk_level:     ${default(map.get(args, "risk_level"), "low")}
+          - governance_url: ${sys.get_env("GOVERNANCE_URL")}
+          - project_id:     ${sys.get_env("GCP_PROJECT_ID")}
+          - pubsub_url:     ${"https://pubsub.googleapis.com/v1/projects/" + sys.get_env("GCP_PROJECT_ID") + "/topics/audit-events:publish"}
+
+    # 2. Policy check via governance service
+    - check_policy:
+        try:
+          call: http.post
+          args:
+            url:  ${governance_url + "/policy/check"}
+            auth:
+              type: OIDC
+            body:
+              user_role: ${user_role}
+              skill:     ${skill}
+              prompt:    ${action}
+          result: policy_result
+        except:
+          as: e
+          steps:
+            - governance_unreachable:
+                raise: "Governance service unreachable — cannot evaluate policy"
+
+    # 3. Block if policy denied
+    - evaluate_policy:
         switch:
-          - condition: ${risk_level == "low"}
-            next: auto_approve
+          - condition: ${not policy_result.body.allowed}
+            next: return_policy_denied
+
+    # 4. Route by risk level
+    - route_by_risk:
+        switch:
           - condition: ${risk_level == "high"}
-            next: human_approve
-    - auto_approve:
-        return: {approved: true, method: "auto"}
-    - human_approve:
+            next: build_high_risk_msg
+        next: build_approved_msg
+
+    # 5a. High-risk: build Pub/Sub message and notify
+    - build_high_risk_msg:
+        assign:
+          - audit_payload:
+              event_type: "approval.high_risk.pending"
+              user_id:    ${user_id}
+              user_role:  ${user_role}
+              action:     ${action}
+              skill:      ${skill}
+              risk_level: ${risk_level}
+              workflow:   "approval-gate"
+              status:     "pending_human_review"
+          - encoded_msg: ${base64.encode(json.encode(audit_payload))}
+
+    - emit_high_risk_event:
         call: http.post
         args:
-          url: ${sys.get_env("GOVERNANCE_URL") + "/approvals/request"}
-          body: ${args}
-        result: approval_result
-        next: return_result
-    - return_result:
-        return: ${approval_result}
+          url:  ${pubsub_url}
+          auth:
+            type: OAuth2
+          body:
+            messages:
+              - data: ${encoded_msg}
+        result: _
+        next: return_pending_human
+
+    # 5b. Low/medium risk: build approval audit message
+    - build_approved_msg:
+        assign:
+          - audit_payload:
+              event_type: "approval.auto_approved"
+              user_id:    ${user_id}
+              user_role:  ${user_role}
+              action:     ${action}
+              skill:      ${skill}
+              risk_level: ${risk_level}
+              workflow:   "approval-gate"
+          - encoded_msg: ${base64.encode(json.encode(audit_payload))}
+
+    - emit_approved_event:
+        call: http.post
+        args:
+          url:  ${pubsub_url}
+          auth:
+            type: OAuth2
+          body:
+            messages:
+              - data: ${encoded_msg}
+        result: _
+        next: return_auto_approved
+
+    # Return steps
+    - return_auto_approved:
+        return:
+          approved:   true
+          method:     "auto"
+          risk_level: ${risk_level}
+          user_id:    ${user_id}
+
+    - return_pending_human:
+        return:
+          approved:   false
+          method:     "pending_human"
+          risk_level: ${risk_level}
+          user_id:    ${user_id}
+          message:    "High-risk action queued for human review — check audit-events topic"
+
+    - return_policy_denied:
+        return:
+          approved:   false
+          method:     "policy_block"
+          violations: ${policy_result.body.violations}
+          user_id:    ${user_id}
