@@ -4,7 +4,6 @@ In production: subscribes to Cloud Pub/Sub audit-events topic.
 For local dev: maintains an in-memory ring buffer (last 1000 events).
 """
 
-import json
 import logging
 import os
 from collections import deque
