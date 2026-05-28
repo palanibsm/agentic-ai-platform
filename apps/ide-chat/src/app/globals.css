@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Google Font ─────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+::-webkit-scrollbar-thumb {
+  background: #4e4e4e;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6e6e6e;
+}
+
+/* ── Chat bubbles ────────────────────────────────────────────────────────── */
+.bubble-user {
+  @apply bg-ide-user text-ide-text px-4 py-2 rounded-lg text-sm max-w-[80%] whitespace-pre-wrap;
+}
+
+.bubble-assistant {
+  @apply bg-ide-assistant text-ide-text px-4 py-3 rounded-lg text-sm max-w-[85%] border border-ide-border;
+}
+
+/* ── Prose inside assistant bubbles ─────────────────────────────────────── */
+.bubble-assistant p {
+  margin: 0 0 0.5rem;
+}
+.bubble-assistant p:last-child {
+  margin-bottom: 0;
+}
+.bubble-assistant ul, .bubble-assistant ol {
+  margin: 0.25rem 0 0.5rem 1.25rem;
+}
+.bubble-assistant li {
+  margin-bottom: 0.2rem;
+}
+.bubble-assistant h1, .bubble-assistant h2, .bubble-assistant h3 {
+  color: #e1e1e1;
+  font-weight: 600;
+  margin: 0.75rem 0 0.35rem;
+}
+.bubble-assistant strong {
+  color: #e1e1e1;
+}
+.bubble-assistant a {
+  color: #4fc3f7;
+  text-decoration: underline;
+}
+.bubble-assistant hr {
+  border-color: #3e3e3e;
+  margin: 0.75rem 0;
+}
+
+/* inline code (non-block) */
+.bubble-assistant code:not(.hljs) {
+  background: #333;
+  color: #ce9178;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 0.85em;
+}
+
+/* ── Tool call badges ────────────────────────────────────────────────────── */
+.tool-badge {
+  @apply text-xs px-2 py-0.5 rounded-full border border-ide-border bg-ide-panel text-ide-muted;
+}
+
+/* ── Sidebar session item ────────────────────────────────────────────────── */
+.session-item {
+  @apply flex items-start gap-2 px-3 py-2 rounded cursor-pointer text-xs text-ide-muted hover:bg-ide-active transition-colors;
+}
+.session-item.active {
+  @apply bg-ide-active text-ide-text;
+}

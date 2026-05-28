@@ -136,6 +136,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── IDE Chat (Next.js developer interface) ───────────────────────────────
+  ide-chat:
+    build:
+      context: ../apps/ide-chat
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    env_file: ../.env
+    environment:
+      <<: *service-urls
+    depends_on:
+      agent-core:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   qdrant_storage:   # persists vector data across container restarts
 

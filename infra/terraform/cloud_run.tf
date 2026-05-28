@@ -411,3 +411,50 @@ resource "google_cloud_run_v2_service_iam_member" "portal_public" {
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
+
+# ── IDE Chat ──────────────────────────────────────────────────────────────────
+resource "google_cloud_run_v2_service" "ide_chat" {
+  name     = "ide-chat"
+  location = var.region
+  project  = var.project_id
+
+  ingress = "INGRESS_TRAFFIC_ALL"
+
+  template {
+    service_account = local.sa_email
+
+    containers {
+      image = "${local.image_base}/ide-chat:${var.image_tag}"
+
+      ports {
+        container_port = 3001
+      }
+
+      env {
+        name  = "AGENT_CORE_URL"
+        value = google_cloud_run_v2_service.agent_core.uri
+      }
+      env {
+        name  = "NEXT_PUBLIC_AGENT_URL"
+        value = google_cloud_run_v2_service.agent_core.uri
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+    }
+  }
+
+  depends_on = [google_cloud_run_v2_service.agent_core]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "ide_chat_public" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.ide_chat.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}

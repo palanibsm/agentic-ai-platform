@@ -8,6 +8,11 @@ output "portal_url" {
   value       = google_cloud_run_v2_service.portal.uri
 }
 
+output "ide_chat_url" {
+  description = "URL of the IDE Chat developer interface"
+  value       = google_cloud_run_v2_service.ide_chat.uri
+}
+
 output "agent_core_url" {
   description = "URL of the agent-core service"
   value       = google_cloud_run_v2_service.agent_core.uri

@@ -125,7 +125,7 @@ foreach ($svc in $backendServices) {
         --quiet
     Write-Host "  $($svc.name) pushed." -ForegroundColor Green
 }
-# Portal is built after agent-core is deployed (needs its URL as build arg - see step 6e)
+# Portal and ide-chat are built after agent-core is deployed (need its URL as build arg)
 
 # ── 6. Deploy services to Cloud Run ──────────────────────────────────────────
 Write-Host "[6/7] Deploying to Cloud Run..." -ForegroundColor Yellow
@@ -262,15 +262,54 @@ gcloud run deploy portal `
 $PORTAL_URL = (gcloud run services describe portal --region $Region --project $Project --format "value(status.url)")
 Write-Host "  portal: $PORTAL_URL" -ForegroundColor Green
 
+# 6f. IDE Chat - build with agent-core URL, then deploy
+Write-Host "  Building ide-chat with NEXT_PUBLIC_AGENT_URL=$AGENT_CORE_URL..." -ForegroundColor Cyan
+$ideChatCtx = Join-Path $ROOT "apps/ide-chat"
+$ideChatImg  = "$IMAGE_BASE/ide-chat:latest"
+
+$ideBuildConfig = @"
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    - build
+    - --build-arg
+    - NEXT_PUBLIC_AGENT_URL=$AGENT_CORE_URL
+    - -t
+    - $ideChatImg
+    - .
+images:
+- $ideChatImg
+"@
+$ideTmpYaml = Join-Path $env:TEMP "ide-chat-cloudbuild.yaml"
+$ideBuildConfig | Set-Content $ideTmpYaml
+
+gcloud builds submit $ideChatCtx `
+    --config $ideTmpYaml `
+    --project $Project `
+    --quiet
+
+Remove-Item $ideTmpYaml
+
+gcloud run deploy ide-chat `
+    --image $ideChatImg `
+    --port 3001 `
+    --set-env-vars "AGENT_CORE_URL=$AGENT_CORE_URL,NEXT_PUBLIC_AGENT_URL=$AGENT_CORE_URL" `
+    @commonFlags
+
+$IDE_CHAT_URL = (gcloud run services describe ide-chat --region $Region --project $Project --format "value(status.url)")
+Write-Host "  ide-chat: $IDE_CHAT_URL" -ForegroundColor Green
+
 # ── 7. Summary ────────────────────────────────────────────────────────────────
 Write-Host "`n[7/7] Deployment complete!" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "=== Cloud Run Service URLs ===" -ForegroundColor Cyan
 Write-Host "  portal      : $PORTAL_URL" -ForegroundColor Green
+Write-Host "  ide-chat    : $IDE_CHAT_URL" -ForegroundColor Green
 Write-Host "  agent-core  : $AGENT_CORE_URL" -ForegroundColor Green
 Write-Host "  rag-service : $RAG_SERVICE_URL" -ForegroundColor Green
 Write-Host "  llm-gateway : $LLM_GATEWAY_URL" -ForegroundColor Green
 Write-Host "  governance  : $GOVERNANCE_URL" -ForegroundColor Green
 Write-Host "  qdrant      : $QDRANT_URL" -ForegroundColor Green
 Write-Host ""
-Write-Host "Open your portal: $PORTAL_URL" -ForegroundColor Cyan
+Write-Host "Portal   : $PORTAL_URL" -ForegroundColor Cyan
+Write-Host "IDE Chat : $IDE_CHAT_URL" -ForegroundColor Cyan
