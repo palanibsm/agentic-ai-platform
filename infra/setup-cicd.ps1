@@ -73,7 +73,7 @@ if ($existingTrigger -and $existingTrigger -notmatch "Listed 0") {
         Write-Host "  Trigger created successfully." -ForegroundColor Green
     } else {
         Write-Host "  Trigger creation failed." -ForegroundColor Red
-        Write-Host "  Make sure you connected the repo first (see script header)." -ForegroundColor Yellow
+        Write-Host "  Make sure you connected the repo first -- see script header comments." -ForegroundColor Yellow
     }
 }
 
