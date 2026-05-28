@@ -1,6 +1,6 @@
 """AgentState — shared state passed through every LangGraph node."""
 
-from typing import Annotated, Any
+from typing import Annotated
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 import operator
@@ -10,7 +10,7 @@ class AgentState(BaseModel):
     """Typed state for the agentic AI graph."""
 
     # Chat history — add_messages reducer appends new messages
-    messages: Annotated[list[Any], add_messages] = Field(default_factory=list)
+    messages: Annotated[list, add_messages] = Field(default_factory=list)
 
     # Request context
     user_id: str = ""

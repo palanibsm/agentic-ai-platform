@@ -9,8 +9,6 @@ import logging
 import os
 from collections import deque
 from datetime import datetime, timezone
-from typing import Any
-
 logger = logging.getLogger(__name__)
 
 _STORE: deque[dict] = deque(maxlen=1000)   # in-memory fallback
