@@ -1,12 +1,12 @@
 """
-Ingestion pipeline — GCS → chunk → embed → Vertex AI Vector Search upsert.
+Ingestion pipeline — GCS → chunk → embed → Qdrant upsert.
 
 Flow:
   1. List objects in GCS bucket under given prefix
   2. Download and parse each document (txt, md, pdf text layer)
   3. Chunk each document
-  4. Embed chunks in batches
-  5. Upsert to Vertex AI Vector Search index with metadata + access control
+  4. Embed chunks in batches (sentence-transformers, local)
+  5. Upsert to Qdrant with payload metadata + RBAC allowed_roles
 """
 
 import os
@@ -98,7 +98,7 @@ async def ingest_from_gcs(prefix: str = "", allowed_roles: list[str] = []) -> di
     for chunk, vector in zip(all_chunks, vectors):
         chunk["embedding"] = vector
 
-    # Upsert to Vertex AI Vector Search
+    # Upsert to Qdrant
     await upsert_chunks(all_chunks)
 
     logger.info(f"Ingestion complete: {len(all_chunks)} chunks upserted, {skipped} files skipped")

@@ -6,6 +6,7 @@ RBAC filtering is done via Qdrant payload filters on the allowed_roles field.
 
 import os
 import uuid
+import hashlib
 import logging
 
 logger = logging.getLogger("rag-service.vector_store")
@@ -47,9 +48,13 @@ async def upsert_chunks(chunks: list[dict]) -> None:
     points = []
     for chunk in chunks:
         allowed_roles = chunk.get("metadata", {}).get("allowed_roles", ["admin"])
+        # Deterministic ID from source + chunk_index so re-ingestion overwrites, not duplicates
+        stable_id = str(uuid.UUID(hashlib.md5(
+            f"{chunk.get('source', '')}::{chunk.get('chunk_index', 0)}".encode()
+        ).hexdigest()))
         points.append(
             PointStruct(
-                id=str(uuid.uuid4()),
+                id=stable_id,
                 vector=chunk["embedding"],
                 payload={
                     "text":          chunk.get("text", ""),

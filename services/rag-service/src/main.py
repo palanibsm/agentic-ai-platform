@@ -1,8 +1,8 @@
 """
 RAG Service — FastAPI app.
 Endpoints:
-  POST /ingest      — load docs from GCS, embed, upsert to Vertex AI Vector Search
-  POST /retrieve    — embed query, search Vertex AI, return chunks (IAM-filtered)
+  POST /ingest      — load docs from GCS, embed, upsert to Qdrant
+  POST /retrieve    — embed query, search Qdrant, return chunks (RBAC-filtered)
   GET  /health
 """
 
