@@ -40,6 +40,12 @@ variable "llm_budget_usd" {
 
 # ── IAP / Load Balancer ───────────────────────────────────────────────────────
 
+variable "alert_email" {
+  description = "Email address for Cloud Monitoring alert notifications"
+  type        = string
+  default     = "stels.karthik@gmail.com"
+}
+
 variable "iap_support_email" {
   description = "Support email shown on the IAP OAuth consent screen (must be a Google account or group)"
   type        = string
