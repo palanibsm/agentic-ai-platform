@@ -37,3 +37,51 @@ variable "llm_budget_usd" {
   type        = number
   default     = 25
 }
+
+# ── IAP / Load Balancer ───────────────────────────────────────────────────────
+
+variable "iap_support_email" {
+  description = "Support email shown on the IAP OAuth consent screen (must be a Google account or group)"
+  type        = string
+  default     = ""
+}
+
+variable "iap_portal_client_id" {
+  description = "OAuth2 client ID for portal IAP (create manually in GCP Console → Credentials)"
+  type        = string
+  sensitive   = true
+}
+
+variable "iap_portal_client_secret" {
+  description = "OAuth2 client secret for portal IAP"
+  type        = string
+  sensitive   = true
+}
+
+variable "iap_ide_chat_client_id" {
+  description = "OAuth2 client ID for ide-chat IAP (create manually in GCP Console → Credentials)"
+  type        = string
+  sensitive   = true
+}
+
+variable "iap_ide_chat_client_secret" {
+  description = "OAuth2 client secret for ide-chat IAP"
+  type        = string
+  sensitive   = true
+}
+
+variable "iap_allowed_users" {
+  description = "IAM members allowed through IAP (e.g. [\"user:alice@example.com\", \"group:devs@example.com\"])"
+  type        = list(string)
+  default     = []
+}
+
+variable "portal_domain" {
+  description = "Custom domain for the portal (e.g. portal.ai.example.com). Used for managed SSL cert."
+  type        = string
+}
+
+variable "ide_chat_domain" {
+  description = "Custom domain for IDE chat (e.g. ide.ai.example.com). Used for managed SSL cert."
+  type        = string
+}

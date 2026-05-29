@@ -9,6 +9,10 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
+    "workflows.googleapis.com",
+    "cloudscheduler.googleapis.com",
+    "compute.googleapis.com",         # Load Balancer (IAP frontend)
+    "iap.googleapis.com",             # Identity-Aware Proxy
   ])
 
   project            = var.project_id

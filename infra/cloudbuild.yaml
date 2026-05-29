@@ -51,13 +51,17 @@ steps:
 
   - id: build-agent-core
     name: gcr.io/cloud-builders/docker
+    entrypoint: bash
     args:
-      - build
-      - -t
-      - $_REGISTRY/agent-core:$_IMAGE_TAG
-      - -t
-      - $_REGISTRY/agent-core:latest
-      - services/agent-core
+      - -c
+      - |
+        # Copy skills/ into the agent-core build context so the Dockerfile
+        # can COPY skills/ ./skills/ from within that directory.
+        cp -r skills services/agent-core/skills
+        docker build \
+          -t $_REGISTRY/agent-core:$_IMAGE_TAG \
+          -t $_REGISTRY/agent-core:latest \
+          services/agent-core
     waitFor: ["-"]
 
   # ── Phase 2: Push all images ───────────────────────────────────────────────

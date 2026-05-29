@@ -371,7 +371,8 @@ resource "google_cloud_run_v2_service" "portal" {
   location = var.region
   project  = var.project_id
 
-  ingress = "INGRESS_TRAFFIC_ALL"
+  # Only accept traffic from the global load balancer (which enforces IAP).
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 
   template {
     service_account = local.sa_email
@@ -404,13 +405,8 @@ resource "google_cloud_run_v2_service" "portal" {
   depends_on = [google_cloud_run_v2_service.agent_core]
 }
 
-resource "google_cloud_run_v2_service_iam_member" "portal_public" {
-  project  = var.project_id
-  location = var.region
-  name     = google_cloud_run_v2_service.portal.name
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
+# allUsers removed — portal is now protected by IAP via the load balancer.
+# Invoker grant for the serverless NEG is in iap.tf (portal_neg_invoker).
 
 # ── IDE Chat ──────────────────────────────────────────────────────────────────
 resource "google_cloud_run_v2_service" "ide_chat" {
@@ -418,7 +414,8 @@ resource "google_cloud_run_v2_service" "ide_chat" {
   location = var.region
   project  = var.project_id
 
-  ingress = "INGRESS_TRAFFIC_ALL"
+  # Only accept traffic from the global load balancer (which enforces IAP).
+  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
 
   template {
     service_account = local.sa_email
@@ -451,10 +448,5 @@ resource "google_cloud_run_v2_service" "ide_chat" {
   depends_on = [google_cloud_run_v2_service.agent_core]
 }
 
-resource "google_cloud_run_v2_service_iam_member" "ide_chat_public" {
-  project  = var.project_id
-  location = var.region
-  name     = google_cloud_run_v2_service.ide_chat.name
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
+# allUsers removed — ide-chat is now protected by IAP via the load balancer.
+# Invoker grant for the serverless NEG is in iap.tf (ide_chat_neg_invoker).
