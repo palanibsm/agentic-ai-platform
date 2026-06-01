@@ -84,6 +84,14 @@ resource "google_cloud_run_v2_service" "governance" {
   template {
     service_account = local.sa_email
 
+    # Cloud SQL connection for PostgreSQL
+    volumes {
+      name = "cloudsql"
+      cloud_sql_instance {
+        instances = [google_sql_database_instance.postgres.connection_name]
+      }
+    }
+
     containers {
       image = "${local.image_base}/governance:${var.image_tag}"
 
@@ -99,6 +107,15 @@ resource "google_cloud_run_v2_service" "governance" {
         name  = "GCP_REGION"
         value = var.region
       }
+      env {
+        name  = "DATABASE_URL"
+        value = local.database_url
+      }
+
+      volume_mounts {
+        name       = "cloudsql"
+        mount_path = "/cloudsql"
+      }
 
       resources {
         limits = {
@@ -112,14 +129,19 @@ resource "google_cloud_run_v2_service" "governance" {
           path = "/health"
           port = 8003
         }
-        initial_delay_seconds = 5
+        initial_delay_seconds = 10
         period_seconds        = 10
         failure_threshold     = 5
       }
     }
   }
 
-  depends_on = [google_project_service.apis]
+  depends_on = [
+    google_project_service.apis,
+    google_sql_database_instance.postgres,
+    google_sql_database.governance_db,
+    google_sql_user.governance_user,
+  ]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "governance_public" {
@@ -288,7 +310,7 @@ resource "google_cloud_run_v2_service" "agent_core" {
 
   template {
     service_account = local.sa_email
-    timeout         = "120s"
+    timeout         = "300s"
 
     containers {
       image = "${local.image_base}/agent-core:${var.image_tag}"

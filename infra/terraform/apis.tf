@@ -13,6 +13,7 @@ resource "google_project_service" "apis" {
     "cloudscheduler.googleapis.com",
     "compute.googleapis.com",         # Load Balancer (IAP frontend)
     "iap.googleapis.com",             # Identity-Aware Proxy
+    "sqladmin.googleapis.com",        # Cloud SQL
     "monitoring.googleapis.com",      # Cloud Monitoring
     "logging.googleapis.com",         # Cloud Logging (already enabled, explicit here)
   ])
