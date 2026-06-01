@@ -6,10 +6,6 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 5.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
-    }
   }
 
   # Remote state in GCS.
@@ -29,4 +25,5 @@ provider "google" {
 locals {
   image_base = "${var.region}-docker.pkg.dev/${var.project_id}/agentic-ai"
   sa_email   = google_service_account.runner.email
+  # database_url and db_connection_name removed — using SQLite for prototype
 }

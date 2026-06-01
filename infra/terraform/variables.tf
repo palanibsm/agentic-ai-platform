@@ -38,56 +38,37 @@ variable "llm_budget_usd" {
   default     = 25
 }
 
-# ── IAP / Load Balancer ───────────────────────────────────────────────────────
-
 variable "alert_email" {
   description = "Email address for Cloud Monitoring alert notifications"
   type        = string
   default     = "stels.karthik@gmail.com"
 }
 
-variable "iap_support_email" {
-  description = "Support email shown on the IAP OAuth consent screen (must be a Google account or group)"
+# ── NextAuth.js Google OAuth ───────────────────────────────────────────────────
+# Used by portal for Google login (replaces IAP for prototype).
+# Create OAuth client at: GCP Console → APIs & Services → Credentials
+# Authorized redirect URI: https://<portal-cloud-run-url>/api/auth/callback/google
+
+variable "google_client_id" {
+  description = "Google OAuth client ID for NextAuth.js portal login"
+  type        = string
+  sensitive   = true
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth client secret for NextAuth.js portal login"
+  type        = string
+  sensitive   = true
+}
+
+variable "nextauth_secret" {
+  description = "Random secret for NextAuth.js session encryption (generate with: openssl rand -base64 32)"
+  type        = string
+  sensitive   = true
+}
+
+variable "portal_url" {
+  description = "Public URL of the portal Cloud Run service (used as NEXTAUTH_URL)"
   type        = string
   default     = ""
-}
-
-variable "iap_portal_client_id" {
-  description = "OAuth2 client ID for portal IAP (create manually in GCP Console → Credentials)"
-  type        = string
-  sensitive   = true
-}
-
-variable "iap_portal_client_secret" {
-  description = "OAuth2 client secret for portal IAP"
-  type        = string
-  sensitive   = true
-}
-
-variable "iap_ide_chat_client_id" {
-  description = "OAuth2 client ID for ide-chat IAP (create manually in GCP Console → Credentials)"
-  type        = string
-  sensitive   = true
-}
-
-variable "iap_ide_chat_client_secret" {
-  description = "OAuth2 client secret for ide-chat IAP"
-  type        = string
-  sensitive   = true
-}
-
-variable "iap_allowed_users" {
-  description = "IAM members allowed through IAP (e.g. [\"user:alice@example.com\", \"group:devs@example.com\"])"
-  type        = list(string)
-  default     = []
-}
-
-variable "portal_domain" {
-  description = "Custom domain for the portal (e.g. portal.ai.example.com). Used for managed SSL cert."
-  type        = string
-}
-
-variable "ide_chat_domain" {
-  description = "Custom domain for IDE chat (e.g. ide.ai.example.com). Used for managed SSL cert."
-  type        = string
 }

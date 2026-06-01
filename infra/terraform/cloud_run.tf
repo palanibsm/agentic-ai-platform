@@ -84,14 +84,6 @@ resource "google_cloud_run_v2_service" "governance" {
   template {
     service_account = local.sa_email
 
-    # Cloud SQL connection for PostgreSQL
-    volumes {
-      name = "cloudsql"
-      cloud_sql_instance {
-        instances = [google_sql_database_instance.postgres.connection_name]
-      }
-    }
-
     containers {
       image = "${local.image_base}/governance:${var.image_tag}"
 
@@ -109,12 +101,7 @@ resource "google_cloud_run_v2_service" "governance" {
       }
       env {
         name  = "DATABASE_URL"
-        value = local.database_url
-      }
-
-      volume_mounts {
-        name       = "cloudsql"
-        mount_path = "/cloudsql"
+        value = "sqlite+aiosqlite:////app/data/governance.db"
       }
 
       resources {
@@ -136,12 +123,7 @@ resource "google_cloud_run_v2_service" "governance" {
     }
   }
 
-  depends_on = [
-    google_project_service.apis,
-    google_sql_database_instance.postgres,
-    google_sql_database.governance_db,
-    google_sql_user.governance_user,
-  ]
+  depends_on = [google_project_service.apis]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "governance_public" {
@@ -393,8 +375,9 @@ resource "google_cloud_run_v2_service" "portal" {
   location = var.region
   project  = var.project_id
 
-  # Only accept traffic from the global load balancer (which enforces IAP).
-  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  # Public — auth handled by NextAuth.js inside the Next.js app (Google OAuth).
+  # Swap to INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER + IAP for production.
+  ingress = "INGRESS_TRAFFIC_ALL"
 
   template {
     service_account = local.sa_email
@@ -414,6 +397,37 @@ resource "google_cloud_run_v2_service" "portal" {
         name  = "NEXT_PUBLIC_AGENT_URL"
         value = google_cloud_run_v2_service.agent_core.uri
       }
+      env {
+        name  = "NEXTAUTH_URL"
+        value = var.portal_url != "" ? var.portal_url : "https://placeholder.run.app"
+      }
+      env {
+        name = "GOOGLE_CLIENT_ID"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.google_client_id.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "GOOGLE_CLIENT_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.google_client_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "NEXTAUTH_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.nextauth_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
 
       resources {
         limits = {
@@ -424,11 +438,21 @@ resource "google_cloud_run_v2_service" "portal" {
     }
   }
 
-  depends_on = [google_cloud_run_v2_service.agent_core]
+  depends_on = [
+    google_cloud_run_v2_service.agent_core,
+    google_secret_manager_secret.google_client_id,
+    google_secret_manager_secret.google_client_secret,
+    google_secret_manager_secret.nextauth_secret,
+  ]
 }
 
-# allUsers removed — portal is now protected by IAP via the load balancer.
-# Invoker grant for the serverless NEG is in iap.tf (portal_neg_invoker).
+resource "google_cloud_run_v2_service_iam_member" "portal_public" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.portal.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
 
 # ── IDE Chat ──────────────────────────────────────────────────────────────────
 resource "google_cloud_run_v2_service" "ide_chat" {
@@ -436,8 +460,7 @@ resource "google_cloud_run_v2_service" "ide_chat" {
   location = var.region
   project  = var.project_id
 
-  # Only accept traffic from the global load balancer (which enforces IAP).
-  ingress = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  ingress = "INGRESS_TRAFFIC_ALL"
 
   template {
     service_account = local.sa_email
@@ -470,5 +493,10 @@ resource "google_cloud_run_v2_service" "ide_chat" {
   depends_on = [google_cloud_run_v2_service.agent_core]
 }
 
-# allUsers removed — ide-chat is now protected by IAP via the load balancer.
-# Invoker grant for the serverless NEG is in iap.tf (ide_chat_neg_invoker).
+resource "google_cloud_run_v2_service_iam_member" "ide_chat_public" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.ide_chat.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}

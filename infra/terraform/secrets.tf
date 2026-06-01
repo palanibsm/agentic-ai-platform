@@ -33,3 +33,26 @@ resource "google_secret_manager_secret" "openai_api_key" {
 
   depends_on = [google_project_service.apis]
 }
+
+# ── NextAuth.js secrets ───────────────────────────────────────────────────────
+
+resource "google_secret_manager_secret" "google_client_id" {
+  secret_id = "google-client-id"
+  project   = var.project_id
+  replication { auto {} }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret" "google_client_secret" {
+  secret_id = "google-client-secret"
+  project   = var.project_id
+  replication { auto {} }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret" "nextauth_secret" {
+  secret_id = "nextauth-secret"
+  project   = var.project_id
+  replication { auto {} }
+  depends_on = [google_project_service.apis]
+}
