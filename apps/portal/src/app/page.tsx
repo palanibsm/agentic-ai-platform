@@ -1,231 +1,216 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  Bot, MessageSquare, Store, Shield, BarChart2,
+  Activity, CheckCircle, AlertCircle, Clock,
+  Users, Cpu, GitBranch, ArrowRight,
+} from "lucide-react";
+import { useUser } from "@/components/user-context";
+import { getRoleLabel, type UserRole } from "@/lib/roles";
+import { cn } from "@/lib/cn";
 
-// ── Types ────────────────────────────────────────────────────────────────────
+interface ServiceStatus { name: string; status: "ok" | "error" | "unknown"; }
 
-type Role = "developer" | "senior-engineer" | "architect" | "admin";
-type Skill = "none" | "code-review" | "banking-compliance" | "incident-response" | "terraform-iac";
-
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  toolCalls?: string[];
-  error?: boolean;
+function StatCard({ label, value, icon: Icon, color, href }: {
+  label: string; value: string | number; icon: React.ElementType; color: string; href?: string;
+}) {
+  const content = (
+    <div className={cn("bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-start gap-4", href && "hover:border-gray-700 transition-colors cursor-pointer")}>
+      <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center shrink-0", color)}>
+        <Icon className="w-5 h-5 text-white" />
+      </div>
+      <div>
+        <p className="text-gray-400 text-sm">{label}</p>
+        <p className="text-white text-2xl font-bold mt-0.5">{value}</p>
+      </div>
+    </div>
+  );
+  return href ? <Link href={href}>{content}</Link> : content;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+function ServiceBadge({ name, status }: ServiceStatus) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+      <span className="text-gray-300 text-sm">{name}</span>
+      {status === "ok" ? (
+        <span className="flex items-center gap-1 text-green-400 text-xs"><CheckCircle className="w-3 h-3" /> Healthy</span>
+      ) : status === "error" ? (
+        <span className="flex items-center gap-1 text-red-400 text-xs"><AlertCircle className="w-3 h-3" /> Error</span>
+      ) : (
+        <span className="flex items-center gap-1 text-gray-500 text-xs"><Clock className="w-3 h-3" /> Checking…</span>
+      )}
+    </div>
+  );
+}
 
-const ROLE_COLORS: Record<Role, string> = {
-  developer:        "bg-blue-100 text-blue-800",
-  "senior-engineer":"bg-purple-100 text-purple-800",
-  architect:        "bg-amber-100 text-amber-800",
-  admin:            "bg-red-100 text-red-800",
-};
+function QuickAction({ label, description, href, icon: Icon, color }: {
+  label: string; description: string; href: string; icon: React.ElementType; color: string;
+}) {
+  return (
+    <Link href={href} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-4 hover:border-gray-700 transition-colors group">
+      <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center shrink-0", color)}>
+        <Icon className="w-5 h-5 text-white" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-white text-sm font-medium">{label}</p>
+        <p className="text-gray-500 text-xs truncate">{description}</p>
+      </div>
+      <ArrowRight className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors shrink-0" />
+    </Link>
+  );
+}
 
-// ── Component ────────────────────────────────────────────────────────────────
+function PlatformDashboard({ services }: { services: ServiceStatus[] }) {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Services Healthy" value={`${services.filter(s => s.status === "ok").length}/${services.length}`} icon={Activity} color="bg-blue-600" />
+        <StatCard label="Teams" value="3" icon={Users} color="bg-purple-600" href="/admin" />
+        <StatCard label="Agents" value="–" icon={Bot} color="bg-cyan-600" href="/agents" />
+        <StatCard label="Models" value="4" icon={Cpu} color="bg-amber-600" href="/models" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-white font-semibold mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-400" /> Platform Health</h3>
+          {services.map(s => <ServiceBadge key={s.name} {...s} />)}
+        </div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-white font-semibold mb-4">Quick Actions</h3>
+          <div className="space-y-3">
+            <QuickAction label="Register Team" description="Onboard a new application team" href="/admin" icon={Users} color="bg-purple-600" />
+            <QuickAction label="Assign User Role" description="Set roles for platform users" href="/admin" icon={Shield} color="bg-blue-600" />
+            <QuickAction label="View Observability" description="Platform metrics and traces" href="/observability" icon={BarChart2} color="bg-amber-600" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-export default function ChatPage() {
-  const [messages, setMessages]     = useState<Message[]>([]);
-  const [input, setInput]           = useState("");
-  const [loading, setLoading]       = useState(false);
-  const [sessionId, setSessionId]   = useState<string | undefined>();
-  const [userRole, setUserRole]     = useState<Role>("developer");
-  const [skill, setSkill]           = useState<Skill>("none");
-  const bottomRef = useRef<HTMLDivElement>(null);
+function AppDevOpsDashboard() {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <StatCard label="My Agents" value="–" icon={Bot} color="bg-cyan-600" href="/agents" />
+        <StatCard label="Marketplace" value="–" icon={Store} color="bg-purple-600" href="/marketplace" />
+        <StatCard label="Chat Sessions" value="–" icon={MessageSquare} color="bg-blue-600" href="/chat" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-white font-semibold mb-4">Quick Actions</h3>
+          <div className="space-y-3">
+            <QuickAction label="Register Agent" description="Deploy a new AI agent for your team" href="/agents" icon={Bot} color="bg-cyan-600" />
+            <QuickAction label="Browse Marketplace" description="Discover agents from other teams" href="/marketplace" icon={Store} color="bg-purple-600" />
+            <QuickAction label="Start Chat" description="Talk to an agent" href="/chat" icon={MessageSquare} color="bg-blue-600" />
+          </div>
+        </div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-white font-semibold mb-4">Getting Started</h3>
+          <ol className="space-y-3 text-sm text-gray-400">
+            {["Register your agent in My Agents", "Configure skills and model", "Deploy via CI/CD pipeline", "Publish to Marketplace for A2A"].map((s, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center shrink-0 mt-0.5">{i+1}</span>
+                {s}
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BusinessOpsDashboard() {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <StatCard label="Active Workflows" value="–" icon={GitBranch} color="bg-amber-600" href="/workflows" />
+        <StatCard label="Pending" value="–" icon={Clock} color="bg-red-600" href="/workflows" />
+        <StatCard label="Completed Today" value="–" icon={CheckCircle} color="bg-green-600" href="/workflows" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-white font-semibold mb-4">Quick Actions</h3>
+          <div className="space-y-3">
+            <QuickAction label="New Workflow" description="Automate a human process with AI" href="/workflows" icon={GitBranch} color="bg-amber-600" />
+            <QuickAction label="Chat with Agent" description="Get AI assistance" href="/chat" icon={MessageSquare} color="bg-blue-600" />
+            <QuickAction label="Browse Agents" description="Find agents for workflows" href="/marketplace" icon={Store} color="bg-purple-600" />
+          </div>
+        </div>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-white font-semibold mb-4">Supported Workflow Types</h3>
+          <div className="space-y-2">
+            {["Document review & approval", "Data extraction & reporting", "Customer service / chatbot", "Compliance checks"].map(w => (
+              <div key={w} className="flex items-center gap-2 text-sm text-gray-400">
+                <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />{w}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DefaultDashboard() {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <QuickAction label="Start a Chat" description="Ask the AI assistant anything" href="/chat" icon={MessageSquare} color="bg-blue-600" />
+        <QuickAction label="Browse Agents" description="Find specialist AI agents" href="/marketplace" icon={Store} color="bg-purple-600" />
+        <QuickAction label="Recent Sessions" description="Continue a previous conversation" href="/chat" icon={Clock} color="bg-gray-700" />
+      </div>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center">
+        <Bot className="w-12 h-12 text-blue-400 mx-auto mb-3" />
+        <h3 className="text-white font-semibold mb-2">What can I help you with?</h3>
+        <p className="text-gray-400 text-sm mb-4 max-w-md mx-auto">Use the AI chat to get answers, review documents, check compliance, or automate tasks.</p>
+        <Link href="/chat" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+          <MessageSquare className="w-4 h-4" /> Open Chat
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  const { profile, loading } = useUser();
+  const [services, setServices] = useState<ServiceStatus[]>([
+    { name: "agent-core", status: "unknown" },
+    { name: "rag-service", status: "unknown" },
+    { name: "governance", status: "unknown" },
+    { name: "llm-gateway", status: "unknown" },
+  ]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+    const names = ["agent-core", "rag-service", "governance", "llm-gateway"];
+    Promise.allSettled(names.map(async name => {
+      const r = await fetch(`/api/health/${name}`);
+      return { name, status: r.ok ? "ok" : "error" } as ServiceStatus;
+    })).then(results => {
+      setServices(results.map((r, i) => r.status === "fulfilled" ? r.value : { name: names[i], status: "error" }));
+    });
+  }, []);
 
-  async function sendMessage() {
-    const query = input.trim();
-    if (!query || loading) return;
+  const role = (profile?.role ?? "business-user") as UserRole;
 
-    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: query };
-    setMessages((m) => [...m, userMsg]);
-    setInput("");
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query,
-          user_id: "portal-user",
-          user_role: userRole,
-          skill: skill === "none" ? undefined : skill,
-          session_id: sessionId,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.detail || `Error ${res.status}`);
-      }
-
-      if (data.session_id) setSessionId(data.session_id);
-
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: data.answer || "(no response)",
-        toolCalls: data.tool_calls_made,
-      };
-      setMessages((m) => [...m, assistantMsg]);
-    } catch (err: any) {
-      setMessages((m) => [
-        ...m,
-        { id: crypto.randomUUID(), role: "assistant", content: `Error: ${err.message}`, error: true },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  }
-
-  function clearChat() {
-    setMessages([]);
-    setSessionId(undefined);
-  }
+  if (loading) return <div className="flex items-center justify-center min-h-[60vh]"><p className="text-gray-500">Loading…</p></div>;
 
   return (
-    <div className="flex flex-col h-screen max-w-4xl mx-auto">
-
-      {/* ── Header ── */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white border-b shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-brand rounded-lg flex items-center justify-center">
-            <span className="text-white text-sm font-bold">AI</span>
-          </div>
-          <div>
-            <h1 className="font-semibold text-gray-900">Agentic AI Platform</h1>
-            <p className="text-xs text-gray-500">Enterprise AI Assistant</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Role selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Role:</span>
-            <select
-              value={userRole}
-              onChange={(e) => setUserRole(e.target.value as Role)}
-              className="text-xs border rounded px-2 py-1 bg-white"
-            >
-              <option value="developer">Developer</option>
-              <option value="senior-engineer">Senior Engineer</option>
-              <option value="architect">Architect</option>
-              <option value="admin">Admin</option>
-            </select>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[userRole]}`}>
-              {userRole}
-            </span>
-          </div>
-
-          {/* Skill selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Skill:</span>
-            <select
-              value={skill}
-              onChange={(e) => setSkill(e.target.value as Skill)}
-              className="text-xs border rounded px-2 py-1 bg-white"
-            >
-              <option value="none">None</option>
-              <option value="code-review">Code Review</option>
-              <option value="banking-compliance">Banking Compliance</option>
-              <option value="incident-response">Incident Response</option>
-              <option value="terraform-iac">Terraform IaC</option>
-            </select>
-          </div>
-
-          <button onClick={clearChat} className="text-xs text-gray-500 hover:text-gray-700 border rounded px-2 py-1">
-            Clear
-          </button>
-        </div>
-      </header>
-
-      {/* ── Messages ── */}
-      <main className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 gap-3">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center text-3xl">🤖</div>
-            <p className="text-lg font-medium text-gray-500">How can I help you today?</p>
-            <p className="text-sm">Ask me anything about banking operations, compliance, or code.</p>
-          </div>
-        )}
-
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div>
-              {msg.role === "assistant" && (
-                <div className={`chat-bubble-assistant prose prose-sm max-w-none ${msg.error ? "border-red-200 bg-red-50 text-red-800" : ""}`}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                  {msg.toolCalls && msg.toolCalls.length > 0 && (
-                    <div className="mt-2 pt-2 border-t border-gray-100 flex flex-wrap gap-1">
-                      {Array.from(new Set(msg.toolCalls)).map((tc) => (
-                        <span key={tc} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                          🔧 {tc}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {msg.role === "user" && (
-                <div className="chat-bubble-user">{msg.content}</div>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {loading && (
-          <div className="flex justify-start">
-            <div className="chat-bubble-assistant flex items-center gap-2 text-gray-400">
-              <span className="animate-pulse">●</span>
-              <span className="animate-pulse delay-75">●</span>
-              <span className="animate-pulse delay-150">●</span>
-            </div>
-          </div>
-        )}
-
-        <div ref={bottomRef} />
-      </main>
-
-      {/* ── Input ── */}
-      <footer className="px-6 py-4 bg-white border-t">
-        {sessionId && (
-          <p className="text-xs text-gray-400 mb-2">Session: {sessionId}</p>
-        )}
-        <div className="flex gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a question… (Enter to send, Shift+Enter for new line)"
-            rows={2}
-            className="flex-1 resize-none border rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
-          />
-          <button
-            onClick={sendMessage}
-            disabled={loading || !input.trim()}
-            className="px-5 py-2 bg-brand text-white rounded-xl text-sm font-medium hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? "…" : "Send"}
-          </button>
-        </div>
-      </footer>
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-white">
+          Welcome back{profile?.display_name ? `, ${profile.display_name.split(" ")[0]}` : ""}
+        </h1>
+        <p className="text-gray-400 text-sm mt-1">
+          {getRoleLabel(role)}{profile?.team_name ? ` · ${profile.team_name}` : ""}
+        </p>
+      </div>
+      {(role === "ai-devops" || role === "ai-architect") && <PlatformDashboard services={services} />}
+      {role === "app-devops" && <AppDevOpsDashboard />}
+      {role === "business-ops" && <BusinessOpsDashboard />}
+      {(role === "business-user" || role === "ba") && <DefaultDashboard />}
     </div>
   );
 }

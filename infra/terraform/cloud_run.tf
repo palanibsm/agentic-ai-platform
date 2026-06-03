@@ -381,6 +381,9 @@ resource "google_cloud_run_v2_service" "portal" {
 
   template {
     service_account = local.sa_email
+    scaling {
+      max_instance_count = 1  # prevents OAuth state mismatch with NextAuth
+    }
 
     containers {
       image = "${local.image_base}/portal:${var.image_tag}"
@@ -396,6 +399,18 @@ resource "google_cloud_run_v2_service" "portal" {
       env {
         name  = "NEXT_PUBLIC_AGENT_URL"
         value = google_cloud_run_v2_service.agent_core.uri
+      }
+      env {
+        name  = "GOVERNANCE_URL"
+        value = google_cloud_run_v2_service.governance.uri
+      }
+      env {
+        name  = "RAG_SERVICE_URL"
+        value = google_cloud_run_v2_service.rag_service.uri
+      }
+      env {
+        name  = "LLM_GATEWAY_URL"
+        value = google_cloud_run_v2_service.llm_gateway.uri
       }
       env {
         name  = "NEXTAUTH_URL"

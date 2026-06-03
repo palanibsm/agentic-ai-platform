@@ -12,6 +12,7 @@ dependencies = [
     "google-cloud-pubsub>=2.21",
     "python-dotenv>=1.0",
     "pydantic>=2.7",
+    "aiosqlite>=0.20",
 ]
 
 [project.optional-dependencies]

@@ -14,9 +14,10 @@ class AgentState(BaseModel):
 
     # Request context
     user_id: str = ""
-    user_role: str = "developer"          # developer | senior-engineer | architect | admin
+    user_role: str = "business-user"      # see governance policy engine for valid roles
     skill: str | None = None              # active skill name, e.g. "banking-compliance"
     session_id: str = ""
+    team_id: str = "platform"            # team the user belongs to — used for isolation
 
     # RAG results injected by the retrieve node
     retrieved_chunks: list[dict] = Field(default_factory=list)

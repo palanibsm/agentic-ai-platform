@@ -8,6 +8,8 @@ RUN pip install --no-cache-dir -e ".[dev]" 2>/dev/null || pip install --no-cache
     httpx google-cloud-pubsub python-dotenv pydantic
 
 COPY src/ ./src/
+# Copy skills directory so the registry can load SKILL.md files at runtime
+COPY skills/ ./skills/
 
 EXPOSE 8002
 

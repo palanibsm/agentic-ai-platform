@@ -21,6 +21,7 @@ except ImportError:
     pass
 
 from src.graph.agent import run_agent
+from src.skills.registry import list_skills
 
 GOVERNANCE_URL = os.getenv("GOVERNANCE_URL", "http://localhost:8003")
 
@@ -53,7 +54,8 @@ logger = logging.getLogger(__name__)
 class RunRequest(BaseModel):
     query: str
     user_id: str = "anon"
-    user_role: str = "developer"       # developer | senior-engineer | architect | admin
+    user_role: str = "business-user"
+    team_id: str | None = None         # team the user belongs to (used for isolation)
     skill: str | None = None
     session_id: str | None = None      # if None, a new session is created
 
@@ -62,6 +64,7 @@ class RunResponse(BaseModel):
     answer: str
     session_id: str
     tool_calls_made: list[str]
+    team_id: str | None = None
 
 
 # ── App ──────────────────────────────────────────────────────────────────────
@@ -93,7 +96,14 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "agent-core"}
+    team_id = os.getenv("TEAM_ID", "platform")
+    return {"status": "ok", "service": "agent-core", "team_id": team_id}
+
+
+@app.get("/skills")
+async def skills():
+    """Return available skills for the UI skill selector."""
+    return {"skills": list_skills()}
 
 
 @app.post("/run", response_model=RunResponse)
@@ -104,6 +114,10 @@ async def run(req: RunRequest):
     # Governance policy check — enforces RBAC before any LLM call
     await _policy_check(req.user_role, req.skill, req.query)
 
+    # Team isolation: use team_id from request or fall back to TEAM_ID env var
+    # Cloud Run services are named agent-core-{team-name} per team
+    effective_team_id = req.team_id or os.getenv("TEAM_ID", "platform")
+
     try:
         result = await run_agent(
             query=req.query,
@@ -111,9 +125,10 @@ async def run(req: RunRequest):
             user_role=req.user_role,
             skill=req.skill,
             session_id=session_id,
+            team_id=effective_team_id,
         )
     except Exception as exc:
         logger.exception("Agent run failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
-    return RunResponse(**result)
+    return RunResponse(**result, team_id=effective_team_id)
