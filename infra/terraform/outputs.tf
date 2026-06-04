@@ -48,6 +48,11 @@ output "service_account_email" {
   value       = google_service_account.runner.email
 }
 
+output "memory_service_url" {
+  description = "URL of the memory service"
+  value       = google_cloud_run_v2_service.memory_service.uri
+}
+
 output "artifact_registry" {
   description = "Artifact Registry image base path"
   value       = "${var.region}-docker.pkg.dev/${var.project_id}/agentic-ai"

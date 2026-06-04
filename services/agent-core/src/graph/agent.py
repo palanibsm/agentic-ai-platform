@@ -11,11 +11,14 @@ Skill routing:
 
 import os
 import logging
+import httpx
 from langchain_anthropic import ChatAnthropic
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
+
+MEMORY_SERVICE_URL = os.getenv("MEMORY_SERVICE_URL", "")
 
 from src.graph.state import AgentState
 from src.tools.rag_tool import retrieve
@@ -83,11 +86,14 @@ Guidelines:
 """
 
 
-def _build_system_prompt(skill: SkillMeta | None) -> str:
-    """Combine the base prompt with the skill-specific prompt if a skill is active."""
-    if skill is None:
-        return BASE_SYSTEM_PROMPT
-    return BASE_SYSTEM_PROMPT + "\n\n" + skill.system_prompt
+def _build_system_prompt(skill: SkillMeta | None, longterm_context: str = "") -> str:
+    """Combine base prompt + skill prompt + long-term memory context."""
+    base = BASE_SYSTEM_PROMPT
+    if skill is not None:
+        base = base + "\n\n" + skill.system_prompt
+    if longterm_context:
+        base = base + longterm_context
+    return base
 
 
 def _get_active_tools(skill: SkillMeta | None) -> list:
@@ -117,7 +123,7 @@ def llm_node(state: AgentState) -> dict:
     active_tools = _get_active_tools(skill)
     llm = _build_llm(tools=active_tools)
 
-    system_prompt = _build_system_prompt(skill)
+    system_prompt = _build_system_prompt(skill, getattr(state, "longterm_context", ""))
     messages = [SystemMessage(content=system_prompt)] + list(state.messages)
     response = llm.invoke(messages)
 
@@ -176,9 +182,104 @@ def build_graph() -> StateGraph:
 # Singleton graph — compiled once at import time
 graph = build_graph()
 
-# ── In-memory session store ───────────────────────────────────────────────────
-_SESSION_STORE: dict[str, list] = {}
-MAX_HISTORY = 20
+# ── Memory service helpers ────────────────────────────────────────────────────
+
+_SESSION_STORE: dict[str, list] = {}   # fallback when memory-service is unavailable
+MAX_HISTORY = 40
+
+
+def _msgs_to_lc(raw: list[dict]) -> list:
+    """Convert plain-dict messages from memory-service to LangChain message objects."""
+    out = []
+    for m in raw:
+        role    = m.get("role", "user")
+        content = m.get("content", "")
+        if role == "user":
+            out.append(HumanMessage(content=content))
+        elif role in ("assistant", "ai"):
+            msg = AIMessage(content=content)
+            if m.get("tool_calls"):
+                msg.tool_calls = m["tool_calls"]
+            out.append(msg)
+        elif role == "tool":
+            out.append(ToolMessage(content=content, tool_call_id=m.get("tool_call_id", "")))
+        # skip system messages — we rebuild them fresh each run
+    return out
+
+
+def _lc_to_msgs(lc_messages: list) -> list[dict]:
+    """Convert LangChain message objects to plain dicts for storage."""
+    out = []
+    for m in lc_messages:
+        cls = m.__class__.__name__
+        if cls == "HumanMessage":
+            out.append({"role": "user", "content": m.content, "tool_calls": []})
+        elif cls in ("AIMessage", "ChatMessage"):
+            out.append({
+                "role": "assistant",
+                "content": m.content if isinstance(m.content, str) else "",
+                "tool_calls": getattr(m, "tool_calls", []) or [],
+            })
+        elif cls == "ToolMessage":
+            out.append({
+                "role": "tool",
+                "content": m.content if isinstance(m.content, str) else str(m.content),
+                "tool_calls": [],
+                "tool_call_id": getattr(m, "tool_call_id", ""),
+            })
+    return out
+
+
+async def _load_session(session_id: str) -> list:
+    """Load session history from memory-service (fallback: in-memory)."""
+    if not MEMORY_SERVICE_URL:
+        return _SESSION_STORE.get(session_id, [])
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{MEMORY_SERVICE_URL}/session/{session_id}")
+            if resp.status_code == 200:
+                raw = resp.json().get("messages", [])
+                return _msgs_to_lc(raw)
+    except Exception as exc:
+        logger.warning("memory-service load_session failed (fallback): %s", exc)
+    return _SESSION_STORE.get(session_id, [])
+
+
+async def _save_session(session_id: str, lc_messages: list) -> None:
+    """Persist session history to memory-service (fallback: in-memory)."""
+    trimmed = lc_messages[-MAX_HISTORY:]
+    if MEMORY_SERVICE_URL:
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                await client.post(
+                    f"{MEMORY_SERVICE_URL}/session/{session_id}",
+                    json={"messages": _lc_to_msgs(trimmed)},
+                )
+            return
+        except Exception as exc:
+            logger.warning("memory-service save_session failed (fallback): %s", exc)
+    _SESSION_STORE[session_id] = trimmed
+
+
+async def _load_longterm_memories(user_id: str) -> str:
+    """Fetch long-term memories for a user and format as a prompt section."""
+    if not MEMORY_SERVICE_URL:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(
+                f"{MEMORY_SERVICE_URL}/longterm/{user_id}",
+                params={"limit": 20},
+            )
+            if resp.status_code == 200:
+                memories = resp.json().get("memories", [])
+                if not memories:
+                    return ""
+                lines = [f"- [{m['category']}] {m['content']}" for m in memories]
+                return "\n\nUser memory context:\n" + "\n".join(lines)
+    except Exception as exc:
+        logger.warning("memory-service load_longterm failed: %s", exc)
+    return ""
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -221,7 +322,14 @@ async def run_agent(
         {"query": query, "skill": skill, "user_role": user_role, "team_id": team_id},
     )
 
-    history = _SESSION_STORE.get(session_id, [])
+    # Load session history from memory-service (or in-memory fallback)
+    history = await _load_session(session_id)
+
+    # Load long-term memories and inject into system prompt
+    longterm_context = await _load_longterm_memories(user_id)
+    if longterm_context and skill_meta is None:
+        # Inject after base system prompt for base mode runs
+        pass  # handled in _build_system_prompt via state below
 
     initial_state = AgentState(
         messages=history + [HumanMessage(content=query)],
@@ -230,11 +338,13 @@ async def run_agent(
         skill=skill,
         session_id=session_id,
         team_id=team_id,
+        longterm_context=longterm_context,
     )
 
     final_state = await graph.ainvoke(initial_state)
 
-    _SESSION_STORE[session_id] = list(final_state["messages"])[-MAX_HISTORY:]
+    # Persist updated history to memory-service
+    await _save_session(session_id, list(final_state["messages"]))
 
     answer = ""
     tool_calls_made = []

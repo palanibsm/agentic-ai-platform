@@ -1,0 +1,32 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+
+const GOVERNANCE_URL = process.env.GOVERNANCE_URL || "http://localhost:8003";
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json();
+  const userRes = await fetch(`${GOVERNANCE_URL}/users/by-email/${encodeURIComponent(session.user.email)}`);
+  const userData = userRes.ok ? await userRes.json() : null;
+
+  try {
+    const res = await fetch(`${GOVERNANCE_URL}/a2a/requests`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-role": userData?.role ?? "business-user",
+      },
+      body: JSON.stringify({
+        requester_team_id: body.requester_team_id,
+        target_agent_id: body.target_agent_id,
+        requested_by: session.user.email,
+      }),
+    });
+    return NextResponse.json(await res.json(), { status: res.status });
+  } catch {
+    return NextResponse.json({ error: "Failed to submit request" }, { status: 500 });
+  }
+}

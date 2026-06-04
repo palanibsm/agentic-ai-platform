@@ -25,5 +25,8 @@ class AgentState(BaseModel):
     # Audit trail — accumulated during the run
     audit_events: Annotated[list[dict], operator.add] = Field(default_factory=list)
 
+    # Long-term memory context injected into the system prompt
+    longterm_context: str = ""
+
     # Terminal flag set by the agent when it has a final answer
     finished: bool = False

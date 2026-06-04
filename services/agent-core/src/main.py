@@ -49,6 +49,31 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+async def _a2a_check(caller_team_id: str, target_agent_id: str) -> None:
+    """
+    Enforce A2A access control before one agent invokes another.
+    Raises 403 if the calling team is not whitelisted for the target agent.
+    Fail-open if governance is unreachable (logged).
+    """
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                f"{GOVERNANCE_URL}/a2a/check",
+                json={"requester_team_id": caller_team_id, "target_agent_id": target_agent_id},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if not data.get("allowed", True):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"A2A access denied: {data.get('reason', 'not_whitelisted')}",
+                    )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("A2A governance check failed (fail-open): %s", exc)
+
+
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 class RunRequest(BaseModel):
@@ -58,6 +83,17 @@ class RunRequest(BaseModel):
     team_id: str | None = None         # team the user belongs to (used for isolation)
     skill: str | None = None
     session_id: str | None = None      # if None, a new session is created
+
+
+class A2ARunRequest(BaseModel):
+    """Used when one agent invokes another agent (A2A call)."""
+    query: str
+    caller_team_id: str                # team of the calling agent
+    target_agent_id: str               # registry ID of the target agent
+    user_id: str = "system"
+    user_role: str = "app-devops"
+    skill: str | None = None
+    session_id: str | None = None
 
 
 class RunResponse(BaseModel):
@@ -132,3 +168,51 @@ async def run(req: RunRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
     return RunResponse(**result, team_id=effective_team_id)
+
+
+@app.post("/a2a/invoke", response_model=RunResponse)
+async def a2a_invoke(req: A2ARunRequest):
+    """
+    Agent-to-Agent invocation endpoint.
+    The calling agent must pass its team_id and the target agent's registry ID.
+    Governance A2A check is enforced before execution.
+    An audit event is emitted for every A2A call.
+    """
+    session_id = req.session_id or str(uuid.uuid4())
+
+    # A2A access check — raises 403 if caller is not whitelisted
+    await _a2a_check(req.caller_team_id, req.target_agent_id)
+
+    # Emit audit event for A2A call
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            await client.post(
+                f"{GOVERNANCE_URL}/audit/events",
+                json={
+                    "event_type": "a2a_call",
+                    "user_id": req.user_id,
+                    "session_id": session_id,
+                    "payload": {
+                        "caller_team_id": req.caller_team_id,
+                        "target_agent_id": req.target_agent_id,
+                        "skill": req.skill,
+                    },
+                },
+            )
+    except Exception as exc:
+        logger.warning("Failed to emit A2A audit event: %s", exc)
+
+    try:
+        result = await run_agent(
+            query=req.query,
+            user_id=req.user_id,
+            user_role=req.user_role,
+            skill=req.skill,
+            session_id=session_id,
+            team_id=req.caller_team_id,
+        )
+    except Exception as exc:
+        logger.exception("A2A agent run failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return RunResponse(**result, team_id=req.caller_team_id)

@@ -54,18 +54,24 @@ CREATE TABLE IF NOT EXISTS agent_registrations (
 CREATE INDEX IF NOT EXISTS idx_agents_team_id   ON agent_registrations(team_id);
 CREATE INDEX IF NOT EXISTS idx_agents_is_public ON agent_registrations(is_public);
 
--- ── A2A whitelist ─────────────────────────────────────────────────────────────
+-- ── A2A whitelist / access requests ──────────────────────────────────────────
+-- status: 'pending' (requested by app-devops), 'approved', 'denied'
 CREATE TABLE IF NOT EXISTS a2a_whitelist (
     id                TEXT PRIMARY KEY,
     requester_team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
     target_agent_id   TEXT NOT NULL REFERENCES agent_registrations(id) ON DELETE CASCADE,
-    granted_by        TEXT NOT NULL,
+    requested_by      TEXT NOT NULL,          -- email of requester
+    granted_by        TEXT,                   -- email of approver (null until decided)
+    status            TEXT NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending','approved','denied')),
     created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(requester_team_id, target_agent_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_a2a_requester ON a2a_whitelist(requester_team_id);
 CREATE INDEX IF NOT EXISTS idx_a2a_target    ON a2a_whitelist(target_agent_id);
+CREATE INDEX IF NOT EXISTS idx_a2a_status    ON a2a_whitelist(status);
 
 -- ── Audit log ─────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS audit_log (

@@ -282,6 +282,65 @@ resource "google_cloud_run_v2_service_iam_member" "rag_service_public" {
   member   = "allUsers"
 }
 
+# ── Memory Service ────────────────────────────────────────────────────────────
+resource "google_cloud_run_v2_service" "memory_service" {
+  name     = "memory-service"
+  location = var.region
+  project  = var.project_id
+
+  ingress = "INGRESS_TRAFFIC_ALL"
+
+  template {
+    service_account = local.sa_email
+
+    containers {
+      image = "${local.image_base}/memory-service:${var.image_tag}"
+
+      ports {
+        container_port = 8004
+      }
+
+      env {
+        name  = "GCP_PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "LONGTERM_DB_PATH"
+        value = "/app/data/memory.db"
+      }
+      # REDIS_URL left unset for prototype — falls back to in-memory session store.
+      # For production: set to redis://redis-host:6379 via Cloud Memorystore.
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      startup_probe {
+        http_get {
+          path = "/health"
+          port = 8004
+        }
+        initial_delay_seconds = 10
+        period_seconds        = 10
+        failure_threshold     = 5
+      }
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "memory_service_public" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.memory_service.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
 # ── Agent Core ────────────────────────────────────────────────────────────────
 resource "google_cloud_run_v2_service" "agent_core" {
   name     = "agent-core"
@@ -322,6 +381,10 @@ resource "google_cloud_run_v2_service" "agent_core" {
         value = google_cloud_run_v2_service.governance.uri
       }
       env {
+        name  = "MEMORY_SERVICE_URL"
+        value = google_cloud_run_v2_service.memory_service.uri
+      }
+      env {
         name  = "AGENT_DEFAULT_MODEL"
         value = var.agent_default_model
       }
@@ -358,6 +421,7 @@ resource "google_cloud_run_v2_service" "agent_core" {
     google_cloud_run_v2_service.governance,
     google_cloud_run_v2_service.llm_gateway,
     google_cloud_run_v2_service.rag_service,
+    google_cloud_run_v2_service.memory_service,
   ]
 }
 
@@ -411,6 +475,14 @@ resource "google_cloud_run_v2_service" "portal" {
       env {
         name  = "LLM_GATEWAY_URL"
         value = google_cloud_run_v2_service.llm_gateway.uri
+      }
+      env {
+        name  = "MEMORY_SERVICE_URL"
+        value = google_cloud_run_v2_service.memory_service.uri
+      }
+      env {
+        name  = "NEXT_PUBLIC_MEMORY_SERVICE_URL"
+        value = google_cloud_run_v2_service.memory_service.uri
       }
       env {
         name  = "NEXTAUTH_URL"

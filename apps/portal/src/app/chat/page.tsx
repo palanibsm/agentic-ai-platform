@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Send, Trash2, ChevronDown } from "lucide-react";
+import { Send, Trash2, ChevronDown, BrainCircuit } from "lucide-react";
 import { useUser } from "@/components/user-context";
-import { type UserRole } from "@/lib/roles";
 import { cn } from "@/lib/cn";
 
 interface Message {
-  id: string; role: "user" | "assistant"; content: string;
-  toolCalls?: string[]; error?: boolean;
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  toolCalls?: string[];
+  error?: boolean;
 }
 
 const SKILLS = [
@@ -25,16 +27,67 @@ const SKILLS = [
   { value: "incident-response",  label: "Incident Response" },
 ];
 
+function sessionKey(email: string, skill: string) {
+  return `chat_session:${email}:${skill || "base"}`;
+}
+
 export default function ChatPage() {
-  const { profile } = useUser();
+  const { profile }               = useUser();
   const [messages, setMessages]   = useState<Message[]>([]);
   const [input, setInput]         = useState("");
   const [loading, setLoading]     = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [skill, setSkill]         = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
+
+  // On mount / skill change: restore session_id from localStorage and load history
+  useEffect(() => {
+    if (!profile?.email) return;
+    const key = sessionKey(profile.email, skill);
+    const storedId = localStorage.getItem(key);
+    if (storedId) {
+      setSessionId(storedId);
+      loadHistory(storedId);
+    } else {
+      setMessages([]);
+      setSessionId(undefined);
+    }
+  }, [profile?.email, skill]);
+
+  async function loadHistory(sid: string) {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/session/${sid}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const rawMsgs: { role: string; content: string; tool_calls?: string[] }[] =
+        data.messages ?? [];
+      const uiMsgs: Message[] = rawMsgs
+        .filter(m => m.role === "user" || m.role === "assistant")
+        .map(m => ({
+          id: crypto.randomUUID(),
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          toolCalls: m.tool_calls?.length ? m.tool_calls : undefined,
+        }));
+      setMessages(uiMsgs);
+    } catch { /* ignore — just show empty chat */ }
+    finally { setHistoryLoading(false); }
+  }
+
+  async function clearChat() {
+    if (sessionId) {
+      try { await fetch(`/api/session/${sessionId}`, { method: "DELETE" }); } catch { /* ignore */ }
+    }
+    if (profile?.email) {
+      localStorage.removeItem(sessionKey(profile.email, skill));
+    }
+    setMessages([]);
+    setSessionId(undefined);
+  }
 
   async function sendMessage() {
     const query = input.trim();
@@ -57,13 +110,26 @@ export default function ChatPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || `Error ${res.status}`);
-      if (data.session_id) setSessionId(data.session_id);
+
+      // Persist session_id in localStorage
+      if (data.session_id) {
+        setSessionId(data.session_id);
+        if (profile?.email) {
+          localStorage.setItem(sessionKey(profile.email, skill), data.session_id);
+        }
+      }
+
       setMessages(m => [...m, {
-        id: crypto.randomUUID(), role: "assistant",
-        content: data.answer || "(no response)", toolCalls: data.tool_calls_made,
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: data.answer || "(no response)",
+        toolCalls: data.tool_calls_made,
       }]);
     } catch (err: any) {
-      setMessages(m => [...m, { id: crypto.randomUUID(), role: "assistant", content: `Error: ${err.message}`, error: true }]);
+      setMessages(m => [...m, {
+        id: crypto.randomUUID(), role: "assistant",
+        content: `Error: ${err.message}`, error: true,
+      }]);
     } finally {
       setLoading(false);
     }
@@ -73,12 +139,19 @@ export default function ChatPage() {
     <div className="flex flex-col h-screen">
       {/* Header */}
       <div className="border-b border-gray-800 bg-gray-900 px-6 py-3 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-white font-semibold">AI Chat</h1>
-          {sessionId && <p className="text-gray-500 text-xs mt-0.5">Session: {sessionId.slice(0, 8)}…</p>}
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-white font-semibold">AI Chat</h1>
+            {sessionId && (
+              <p className="text-gray-500 text-xs mt-0.5 flex items-center gap-1">
+                <BrainCircuit className="w-3 h-3" />
+                Session: {sessionId.slice(0, 8)}…
+                {historyLoading && <span className="text-gray-600"> (loading history…)</span>}
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-3">
-          {/* Skill selector */}
           <div className="relative">
             <select
               value={skill}
@@ -90,9 +163,9 @@ export default function ChatPage() {
             <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500 pointer-events-none" />
           </div>
           <button
-            onClick={() => { setMessages([]); setSessionId(undefined); }}
+            onClick={clearChat}
             className="text-gray-500 hover:text-gray-300 transition-colors"
-            title="Clear chat"
+            title="New chat"
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -101,17 +174,21 @@ export default function ChatPage() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {messages.length === 0 && (
+        {messages.length === 0 && !historyLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 gap-4">
             <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center text-3xl">🤖</div>
             <div>
               <p className="text-gray-300 font-medium">How can I help you today?</p>
               <p className="text-sm mt-1">Ask anything — or select a skill for specialised analysis.</p>
             </div>
-            {/* Suggestion chips */}
             <div className="flex flex-wrap gap-2 justify-center max-w-lg">
-              {["Review this Python code for security issues", "Check MAS TRM compliance for access control", "Help me write an incident response plan"].map(s => (
-                <button key={s} onClick={() => setInput(s)} className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 rounded-full px-3 py-1.5 transition-colors text-left">
+              {[
+                "Review this Python code for security issues",
+                "Check MAS TRM compliance for access control",
+                "Help me write an incident response plan",
+              ].map(s => (
+                <button key={s} onClick={() => setInput(s)}
+                  className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 rounded-full px-3 py-1.5 transition-colors text-left">
                   {s}
                 </button>
               ))}
@@ -119,10 +196,19 @@ export default function ChatPage() {
           </div>
         )}
 
+        {historyLoading && (
+          <div className="flex justify-center py-8">
+            <p className="text-gray-500 text-sm">Loading conversation history…</p>
+          </div>
+        )}
+
         {messages.map(msg => (
           <div key={msg.id} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
             {msg.role === "assistant" ? (
-              <div className={cn("max-w-3xl bg-gray-800 border border-gray-700 rounded-2xl rounded-tl-sm px-4 py-3 prose prose-sm prose-invert max-w-none", msg.error && "border-red-800 bg-red-950/50")}>
+              <div className={cn(
+                "max-w-3xl bg-gray-800 border border-gray-700 rounded-2xl rounded-tl-sm px-4 py-3 prose prose-sm prose-invert max-w-none",
+                msg.error && "border-red-800 bg-red-950/50"
+              )}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                 {msg.toolCalls && msg.toolCalls.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-gray-700 flex flex-wrap gap-1">
@@ -133,7 +219,9 @@ export default function ChatPage() {
                 )}
               </div>
             ) : (
-              <div className="max-w-2xl bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 text-sm">{msg.content}</div>
+              <div className="max-w-2xl bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 text-sm">
+                {msg.content}
+              </div>
             )}
           </div>
         ))}
@@ -141,7 +229,10 @@ export default function ChatPage() {
         {loading && (
           <div className="flex justify-start">
             <div className="bg-gray-800 border border-gray-700 rounded-2xl rounded-tl-sm px-4 py-3 flex gap-1">
-              {[0,1,2].map(i => <span key={i} className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
+              {[0, 1, 2].map(i => (
+                <span key={i} className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                  style={{ animationDelay: `${i * 0.15}s` }} />
+              ))}
             </div>
           </div>
         )}

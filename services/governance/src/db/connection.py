@@ -93,6 +93,20 @@ async def _run_migrations() -> None:
     await _db.executescript(schema_sql)
     logger.info("Schema applied")
 
+    # ── Column migrations (for existing DBs) ──────────────────────────────────
+    # Add status/requested_by/updated_at to a2a_whitelist if upgrading from Phase 1
+    for col, definition in [
+        ("status",       "TEXT NOT NULL DEFAULT 'approved'"),
+        ("requested_by", "TEXT NOT NULL DEFAULT ''"),
+        ("updated_at",   "TEXT NOT NULL DEFAULT (datetime('now'))"),
+    ]:
+        try:
+            await _db.execute(f"ALTER TABLE a2a_whitelist ADD COLUMN {col} {definition}")
+            await _db.commit()
+            logger.info("Migrated a2a_whitelist: added column %s", col)
+        except Exception:
+            pass  # column already exists
+
     with open(seed_path) as f:
         seed_sql = f.read()
     await _db.executescript(seed_sql)
