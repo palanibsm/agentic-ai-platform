@@ -74,13 +74,9 @@ export function Sidebar() {
         {!loading && profile && (
           <>
             <div className="flex items-center gap-3 px-2">
-              {profile.image ? (
-                <img src={profile.image} alt="" className="w-7 h-7 rounded-full shrink-0" />
-              ) : (
-                <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-gray-300 shrink-0">
-                  {profile.email[0]?.toUpperCase()}
-                </div>
-              )}
+              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-gray-300 shrink-0">
+                {profile.email[0]?.toUpperCase()}
+              </div>
               <div className="min-w-0 flex-1">
                 <p className="text-white text-xs font-medium truncate">
                   {profile.display_name ?? profile.email}
